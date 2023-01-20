@@ -8,7 +8,6 @@ from pickle import load
 from progetto.main import kernel_poly, kernel_gauss, test_error, import_dataset, callable_predictor
 
 
-
 def select_kernel(predictor_name: str) -> Callable:
     if predictor_name.startswith("poly exp="):
         exp = int(predictor_name[9])
@@ -32,8 +31,8 @@ def import_predictors(predictor_name: str) -> List[Callable]:
     return [callable_predictor(alpha, kernel) for alpha in alphas]
 
 
-# example
 if __name__ == "__main__":
+    # change this to test another pre-trained model
     predictor_name = "poly exp=1_743_1e-05"
 
     predictors = import_predictors(predictor_name)
