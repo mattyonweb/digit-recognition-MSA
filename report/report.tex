@@ -1,0 +1,359 @@
+% Created 2023-01-20 ven 18:37
+% Intended LaTeX compiler: pdflatex
+\documentclass[a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\input{$HOME/.emacs.d/latex-preamble.tex}
+\author{Matteo Cavada}
+\date{\today}
+\title{SVM for digit recognition}
+\hypersetup{
+ pdfauthor={Matteo Cavada},
+ pdftitle={SVM for digit recognition},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 28.2 (Org mode 9.5.5)}, 
+ pdflang={English}}
+\begin{document}
+
+\maketitle
+\tableofcontents
+
+
+\section{Declaration}
+\label{sec:orgf4d55ba}
+
+\emph{I declare that this material, which I now submit for assessment, is entirely my own work and has not been taken from the work of others, save and to the extent that such work has been cited and acknowledged within the text of my work. I understand that plagiarism, collusion, and copying are grave and serious offences in the university and accept the penalties that would be imposed should I engage in plagiarism, collusion or copying. This assignment, or any part of it, has not been previously submitted by me or any other person for assessment on this or any other course of study.}
+
+\section{Abstract}
+\label{sec:org20764bf}
+
+In this project I implemented the kernelized PEGASOS algorithm in Python. The algorithm was then trained for the task of images recognition, specifically \emph{hand-written digit recognition}. A number of combinations of hyperparameters were tested; lowest levels of test error were obtained when using either a Gaussian or a high-degree polynomial kernel.
+
+\section{Dataset and pre-processing}
+\label{sec:org2e05c1a}
+
+\subsection{Dataset}
+\label{sec:org4b87ee3}
+
+The dataset is available at \href{https://www.kaggle.com/datasets/bistaumanga/usps-dataset}{kaggle.com}.
+
+The USPS dataset \cite{uspsdataset} \emph{"is a digit dataset automatically scanned from envelopes by the U.S. Postal Service"}.
+
+The images are all in grayscale, with size 16x16. Each pixel is a continuous value between 0 (black) and 1 (white).
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=.9\linewidth]{cifre/out.png}
+\caption[Short caption]{Examples of few selected digits from the dataset}
+\end{figure}
+
+\subsection{Preprocessing of data}
+\label{sec:org05c3c13}
+
+The data is stored in a single binary file using the format \href{https://www.hdfgroup.org/solutions/hdf5/}{HDF5}; the extraction of data from the file is achieved through the python library \href{https://www.h5py.org/}{h5py}.
+
+Once retrieved, each image is stored as a NumPy\footnote{\url{https://numpy.org/}} array; the label of each image is stored as a simple number.
+
+A few, basic sanity checks were implemented to verify that the dataset is well-formed (ie. all labels are numbers from 0 to 9). \cite{harris2020array}
+
+\section{Training}
+\label{sec:org0c2b9ce}
+
+The algorithm used is \textbf{Pegasos} with a Gaussian or polynomial kernel.
+
+\subsection{Theoretical background}
+\label{sec:org2683f6f}
+
+\subsubsection{An overview of SVMs}
+\label{sec:orgdb10c1b}
+\label{org857a182}
+Support Vector Machines (SVM)\cite{cortes1995support} are a machine learning technique used to learn linear classifiers. The idea behind them can be explained geometrically: on a linearly-separable training set, there exists a (hyper-)plane which divides the dataset in two, so that every point in a given half-space is associated to the same label. SVMs finds this separating plane by maximizing the distance between the hyperplane and the closest data points to it.
+
+More formally, the optimal hyperplane (also known as \emph{maximum-margin separating hyperplane}) can be found by solving the following convex optimization problem:
+
+\begin{equation}
+\begin{matrix}
+\underset{\boldsymbol{w} \in \mathbb{R}^n}{max} & \frac{1}{2} \left \| \boldsymbol{w} \right \|^2
+\\ 
+s.t. & y_t \boldsymbol{w}^T \boldsymbol{x}_t \ge 1
+\end{matrix}
+\end{equation}
+
+This formulation of the problem works only if the training data are linearly separable. In the case of a non-linearly separable dataset, we change the constraints above by adding \(n\) \emph{slack variables} \(\xi_i\) which, informally, encode how serious the violation of the margin constraint is for the datapoint \(x_i\). More formally, the optimization problem now becomes:
+
+\begin{equation}
+\begin{matrix}
+\underset{\boldsymbol{w} \in \mathbb{R}^n}{max} & \frac{\lambda}{2} \left \| \boldsymbol{w} \right \|^2 + \frac{1}{m}\sum_{t=1}^{m}{\xi_t}
+\\ 
+s.t. & y_t \boldsymbol{w}^T \boldsymbol{x}_t \ge 1 - \xi_t
+\\
+& \xi_t \ge 0
+\end{matrix}
+\end{equation}
+
+Through simple algebraic manipulations, it can be seen that the slack \(\xi_t\) is equivalent to \(max(0, 1 - y_t \boldsymbol{w}^T \boldsymbol{x}_t)\), i.e. the hinge loss of \(\boldsymbol{w}\) on \((\boldsymbol{x}_t, y_t)\). Also note the introduction of the regularization parameter \(\lambda\), used to balance the two terms in the objective function.
+
+\subsubsection{PEGASOS}
+\label{sec:org0221afd}
+
+The PEGASOS algorithm \cite{pegasos}, by means of stochastic gradient descent, solves the optimization problem given by the SVM objective function.
+
+It can be proved that the solution to such optimization problem is, in fact, the solution \(\boldsymbol{w}^*\) of the following equation:
+
+\begin{equation}
+\underset{\boldsymbol{w}}{minarg} \:  \frac{\lambda}{2}\left \| \boldsymbol{w} \right \|^2 + \frac{1}{m} \sum_{(\boldsymbol{x},y) \in S} l_{hinge}(y, \boldsymbol{w}^T \boldsymbol{x} )
+\end{equation}
+
+where \(l_{hinge}(y, \boldsymbol{w}^T \boldsymbol{x})\) is defined as \(max(0, 1 - y \boldsymbol{w}^T \boldsymbol{x})\), \(m\) is the number of points in the dataset, and \(S\) is the dataset itself. This holds both in case of linearly and non-linearly separable dataset.
+
+Since the above equation can be equivalently rewritten as:
+
+\begin{equation}
+\underset{\boldsymbol{w}}{minarg} \; \; \frac{1}{m} \sum_{t=1}^{m} l_t(\boldsymbol{w})
+\end{equation}
+
+with \(l_t(\boldsymbol{w}) = \frac{\lambda}{2}\left \| \boldsymbol{w} \right \|^2 + l_{hinge}(y_t, \boldsymbol{w}^T \boldsymbol{x}_t )\), and since \(l_t\) is a convex and differentiable function for each \(t\), we can apply Online Gradient Descent (OGD) to solve the SVM optimization problem.
+
+As the loss functions \(l_t\) are also \(\lambda\) -strongly convex, we can perform an OGD without the projection step. 
+
+\subsubsection{Kernelized PEGASOS}
+\label{sec:org48d76e7}
+\label{org1f67d8e}
+
+The representer theorem shows that the solution \(\boldsymbol{w}^*\) to (4) must be a linear combination of the training datapoints; that allows us to deploy the machinery given by PEGASOS to a Reproducing Kernel Hilbert Space (RKHS) of our choice. In practice, we are able to work in higher-dimensional data spaces without incurring in significant performance losses.
+
+Specifically, we can write the former \(\boldsymbol{w}^*\) as: 
+
+\begin{equation}
+\sum_{s \in S} \alpha_s \, y_s \, K(x_s, \cdot )
+\end{equation}
+
+This core idea allows us to write a kernelized version of PEGASOS; the Python implementation is found in the next section, along with some comments.
+
+\subsection{Implementation}
+\label{sec:orgf3c1fa0}
+
+\subsubsection{Training algorithm}
+\label{sec:org0a82289}
+
+Below is a Python implementation of the kernelized PEGASOS algorithm. Note that this version differs slightly from the actual implementation found in the repository, as few debug instructions were removed and the return type is changed; the core, though, remains the same.
+
+\lstset{language=Python,label= ,caption= ,captionpos=b,numbers=none}
+\begin{lstlisting}
+def pegasos(X, Y, for_digit, kernel, lambd, T) -> Callable:
+  alpha = list()
+
+  for t in range(T):
+      idx  = random.randint(0, len(X)-1)
+      x, y = X[idx], Y[idx]
+
+      y = 1 if y == for_digit else -1
+
+      prediction  = 1 / (lambd * t)
+      prediction *= sum(ys * kernel(xs, x) for xs,ys in alpha)
+
+      if y * prediction < 1:
+	     alpha.append((x,y))
+
+  return lambda x: (
+      sum(ys * kernel(xs, x) for xs,ys in alpha)
+  )
+\end{lstlisting}
+
+This algorithm builds the predictor for a given value from 0 to 9 (\texttt{for\_digit}).
+
+The \texttt{kernel} argument is a Python function that calculates a given kernel: it takes two numpy vectors as arguments and returns a float. Passing such a function as argument to \texttt{pegasos} avoids writing boilerplate code for each different kernel I wanted to use.
+
+\texttt{lambd} is the \(\lambda\) parameter which influences the learning rate (see \hyperref[org857a182]{An overview of SVMs}). \texttt{lambd} varies from \(10^{-8}\) to \(10^{-5}\) during during the execution of the \emph{k-fold}.
+
+\texttt{T} is the number of training points that will be used.
+
+The core of the algorithm iterates \texttt{T} times. Each iteration:
+
+\begin{enumerate}
+\item Picks a random training point and its label, \texttt{(x,y)}.
+\item Transforms \texttt{y} in one of \texttt{\{-1, 1\}} based on \texttt{for\_digit}.
+\item For the prediction formula, see \hyperref[org1f67d8e]{Kernelized PEGASOS}.
+\item When the prediction is incorrect, the wrongfully predicted pair \texttt{(x,y)} is put in the list \texttt{alpha}
+\end{enumerate}
+
+The return value is a function, which takes a data-point and performs a prediction by iterating on all the points in \texttt{alpha}. 
+
+\subsubsection{Multi-class training and predictions}
+\label{sec:orgbc44a2f}
+
+As the algorithm above produces a binary predictor for a \emph{single} digit, there must be a way to choose which is the "best fitting" among ten different prediction.
+
+The approach used in this project is to choose, as the best fitting prediction, the one whose absolute value is greatest among all other predictions. This explains why the algorithm above does not return a binary \(\{1, -1\}\) predictor, but instead returns directly a continuous value.
+
+\section{Testing}
+\label{sec:org767086c}
+
+\subsection{K-Fold cross-validation}
+\label{sec:orgf6dc0e3}
+
+In order to evaluate and compare the performance of PEGASOS on a number of different hyperparameters combinations, the 5-fold external cross validation technique was used.
+
+For each combination:
+
+\begin{enumerate}
+\item The dataset is randomly shuffled
+\item The first fifth of the dataset is used as testset, while the remaining part is used as training set
+\item Predictors are generated for the given training set and the actual test error is calculated
+\item The dataset is rotated (ie. each index is shifted to the right, so that the last fifth of the dataset is put at the beginning of the dataset);
+\item GOTO 3 until you have rotated the dataset in the exact initial position
+\end{enumerate}
+
+Code for this is mostly found in the \texttt{kfold.py} file.
+
+\subsection{Hyperparameters}
+\label{sec:orgc817628}
+
+A number of possible combinations of hyperparameters could be tested. Through a \emph{grid search}, I decided to vary:
+
+\begin{itemize}
+\item The kernel used (see: \hyperref[org068b9da]{Kernels}):
+\begin{itemize}
+\item Gaussian Kernel with parameter \(\gamma = 2\)
+\item Polynomial Kernel with parameters \(exp = 1\)
+\item Polynomial Kernel with parameters \(exp = 3\)
+\item Polynomial Kernel with parameters \(exp = 7\)
+\end{itemize}
+\item The training epochs (\(T\) is the size of the training dataset):
+\begin{itemize}
+\item \(\frac{T}{10}\)
+\item \(\frac{T}{2}\)
+\item \(T\)
+\item \(2 T\)
+\end{itemize}
+\item The \(\lambda\) parameter:
+\begin{itemize}
+\item \(10^{-8}\)
+\item \(10^{-7}\)
+\item \(10^{-6}\)
+\item \(10^{-5}\)
+\end{itemize}
+\end{itemize}
+
+\subsubsection{On the choice of kernel function}
+\label{sec:orgf792d42}
+\label{org068b9da}
+
+A number of possible kernel functions can be used for kernelized learning algorithms. Besides the suggested Gaussian Kernel, in this project I experimented with polynomial kernels with various exponents.
+
+Formally, the Gaussian kernel has the following definition:
+
+\begin{equation}
+K_{gauss} (\mathbf{x}_1, \mathbf{x}_2) = exp(-\frac{1}{2 \gamma} \parallel \mathbf{x}_1 - \mathbf{x}_2 \parallel)
+\end{equation}
+
+\(\gamma\) is an hyperparameter of the kernel; in my code, I set \(\gamma = 2\).
+
+The polynomial kernel has the following formulation:
+
+\begin{equation}
+K_{poly} (\mathbf{x}_1, \mathbf{x}_2) = (1 + \mathbf{x}_1^T \mathbf{x}_2) ^ n
+\end{equation}
+
+\(n\) is the hyperparameter for this kernel. In the code, I experimented with values \(n = 1,3,7\).
+
+\subsubsection{On the choices of \(\lambda\)}
+\label{sec:org7c8dee4}
+
+The chosen values of \(\lambda\) were both a result of empirical tests and suggestion from literature.
+
+Informal tests on the USPS data showed that very small values of \(\lambda\) tended to increase training time, without necessarily increasing the quality of the predictor. 
+
+The same observation is made in \cite{pegasos} in chapter 7.2 and 7.3. Hence, I decided to test \(\lambda\) values around the value presented in this paper, i.e. between \(10^{-8}\) and \(10{-5}\).
+
+\subsection{Results}
+\label{sec:org9e3f1ad}
+
+The best predictors were those which were trained on a bigger number of training points and with bigger values of \(\lambda\).
+
+Almost each kernel was able to reach a low test error (less than \(0.05\)) when these conditions were met. The only exception is the linear kernel, which underperforms if compared to the other kernels.
+
+For graphical representations of the results, see \hyperref[org20e0d68]{appendix 1}.
+
+\subsection{Training times}
+\label{sec:orgcec4c5c}
+
+As the code was not run on dedicated hardware such as GPUs, training times are somewhat long.
+
+Also, the Kernelized PEGASOS algorithm suffers from performance issues when training on big datasets: as the number of wrongful prediction during training increases, the number of subsequent kernel calculations increases as well.
+
+Empirically, the gaussian kernel was the slowest one to train; at parameters \(\lambda=0.5\) and \(2T\) epochs, the predictor for a single digit was calculated in 36 seconds (on average) -- it gives the smallest test error at the expense of speed of execution.  
+
+Averages for each hyperparameter combination are found in the file \texttt{results/results.csv} on the repository. A table, summarizing the average training time for each combination of hyperparameter can be found in \hyperref[org4d67df6]{appendix 2}.
+
+\section{Bibliography}
+\label{sec:orga0669c2}
+
+\bibliography{b} 
+\bibliographystyle{ieeetr}
+
+
+\newpage
+
+\section{Appendix 1: test errors}
+\label{sec:org70d414e}
+\label{org20e0d68}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=290px]{img/Figure_2.png}
+\caption[Short caption]{Iterations vs test error on Polynomial Kernel, exp=1}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=290px]{img/Figure_3.png}
+\caption[Short caption]{Iterations vs test error on Polynomial Kernel, exp=3}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=290px]{img/Figure_4.png}
+\caption[Short caption]{Iterations vs test error on Polynomial Kernel, exp=7}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=290px]{img/Figure_1.png}
+\caption[Short caption]{Iterations vs test error on Gaussian Kernel}
+\end{figure}
+
+\clearpage
+
+\subsection{Tabular form}
+\label{sec:org2d21260}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=400px]{img/tests.png}
+\caption[Short caption]{Test errors on various kernels; the columns represent the number of epochs, while the rows indicate the \(\lambda\) values}
+\end{figure}
+
+\section{Appendix 2: train and test times}
+\label{sec:org05ee95e}
+\label{org4d67df6}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=300px]{img/times.png}
+\caption[Short caption]{Average training + test time (in seconds) of each combination of hyperparameters; the columns represent the number of epochs, while the rows indicate the \(\lambda\) values.}
+\end{figure}
+
+\vfill
+\clearpage
+\end{document}
