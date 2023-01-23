@@ -16,5 +16,30 @@ The report can be found [here](https://github.com/mattyonweb/digit-recognition-M
   - `results.csv` contains raw information on the results of training and test on each single combination of hyperparameters
   - `predictors` contain all the models trained by running `progetto/main.py` in a binary format.
 
-## How to perform training
+## Instructions
 
+To "install" this codebase:
+
+```
+git clone git@github.com:mattyonweb/digit-recognition-MSA.git
+
+cd digit-recognition-MSA
+
+python -m venv env
+source env/bin/activate
+
+pip install -r requirements.txt
+export PYTHONPATH="$(pwd)"
+```
+
+### Training and test
+
+Within the newly created virtual environment, it is possible to perform the whole train+test process by launching:
+
+```
+python progetto/main.py
+```
+
+In order to avoid overwriting existing predictors and results in the directory `results`, few lines are commented out in `main.py`; feel free to de-comment them if there is no need anymore for the old results.
+
+Note that this whole process will take several hours on common computers.

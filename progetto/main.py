@@ -227,6 +227,10 @@ if __name__ == "__main__":
                 with open("results.csv", "a") as f:
                     f.write(f"{kernel_name},{lambd},{T},{avg_test_error},{digit_train_time},{round_time}\n")
 
+                # ======= NOTE ============
+                # De-commenting this will result in overwrite of the pre-calculated predictor in
+                # results/predictor.
+                #
                 # with open(f"results/predictors/{kernel_name}_{T}_{lambd}.bin", "wb") as f:
                 #     pickle.dump(
                 #         [digit_pred[0] for digit_pred in predictors], f
